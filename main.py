@@ -141,4 +141,7 @@ print(get_pair_above_threshold(X, 0.7))
 
 X = X.drop(columns=['volatility2'], axis=1)
 
-print(list(X.columns))
+## Saving features 
+X.to_csv ('data/JPM_2017_2019-features.csv')
+##and Targets
+y.to_csv ('data/JPM_2017_2019-target.csv')
