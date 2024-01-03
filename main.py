@@ -6,6 +6,8 @@ from statsmodels.tsa.stattools import adfuller
 import seaborn as sns
 import argparse
 import os
+from sklearn.model_selection import train_test_split
+
 
 def load_data(file_path):
     data = pd.read_csv(file_path, index_col=0)
@@ -136,6 +138,34 @@ def remove_non_stationary_columns(df, significance_level=0.05):
 
     return df[stationary_columns]
 
+def split_data (feature_file, target_file, train_size):
+    X = pd.read_csv(feature_file, index_col=0, parse_dates=True)
+    y = pd.read_csv(target_file, index_col=0, parse_dates=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_size, shuffle=False) # No shuffling because the indices in time series data are timestamps that occur one after the other (in sequence).
+    
+    # # Plot the data
+    # plt.figure(figsize=(8, 5))
+
+    # plt.plot(X_train['pct_change'], linestyle='None',
+    #         marker='.', markersize=3.0, label='X_train data', 
+    #         color='blue')
+    # plt.plot(X_test['pct_change'], linestyle='None',
+    #         marker='.', markersize=3.0, label='X_test data', 
+    #         color='green')
+
+    # # Set the title and axis label
+    # plt.title("Visualising Train and Test Datasets (pct_change Column)", 
+    #         fontsize=14)
+    # plt.xlabel('Years', fontsize=12)
+    # plt.ylabel('% change (%)', fontsize=12)
+
+    # # Display the plot
+    # plt.legend()
+    # plt.show()
+
+    return X_train, X_test, y_train, y_test
+
+
 def main():
     parser = argparse.ArgumentParser(description='Process some candle file.')
     parser.add_argument('file_path', type=str, help='Path to the candles file')
@@ -152,7 +182,9 @@ def main():
         save_data(X, feature_file)
         save_data(y, target_file)
     else:
-        print("Feature and target files already exist.")
+        print("Feature and target files already exist, moving on to split the data")
+        X_train, X_test, y_train, y_test = split_data (feature_file=feature_file, target_file=target_file, train_size=0.8)
+
 
 
 if __name__ == "__main__":
