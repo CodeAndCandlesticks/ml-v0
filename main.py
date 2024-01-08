@@ -79,13 +79,10 @@ def feature_engineering(data):
     X = data[['open','high','low','close','pct_change', 
             'pct_change2', 'pct_change5', 'rsi', 'adx', 'sma', 
             'corr', 'volatility', 'volatility2']].copy()
-    print (X.head())
-
+    
     X = remove_non_stationary_columns(X)
-    print (X.head())
 
     X = remove_highly_correlated(X, 0.7)
-    print (X.head())
 
     return y, X
 
@@ -107,7 +104,6 @@ def remove_highly_correlated(df, threshold):
 
     # Find columns with correlation greater than the threshold
     to_drop = [column for column in upper.columns if any(upper[column] > threshold)]
-    print (to_drop)
 
     # Drop columns
     df_dropped = df.drop(columns=to_drop, axis=1)
@@ -172,18 +168,35 @@ def main():
     args = parser.parse_args()
 
     # Generating file names based on input
-    feature_file = args.file_path.replace('.csv', '-features.csv')
-    target_file = args.file_path.replace('.csv', '-target.csv')
-
+    base_filename = os.path.basename(args.file_path).replace('.csv', '')
+    feature_file = os.path.join('data', f'{base_filename}-features.csv')
+    target_file = os.path.join('data', f'{base_filename}-target.csv')
+    
     # Check if files already exist
     if not os.path.exists(feature_file) or not os.path.exists(target_file):
+        print ("Data load and Feature engineering")
         data = load_data(args.file_path)
         y, X = feature_engineering(data)
         save_data(X, feature_file)
         save_data(y, target_file)
     else:
         print("Feature and target files already exist, moving on to split the data")
+
+    feature_training_file = os.path.join ('data', f'{base_filename}-features-train.csv')
+    feature_testing_file = os.path.join ('data', f'{base_filename}-features-test.csv')
+    target_training_file = os.path.join ('data', f'{base_filename}-target-train.csv')
+    target_testing_file = os.path.join ('data', f'{base_filename}-target-test.csv')
+    
+    if not os.path.exists (feature_training_file) or not os.path.exists(feature_testing_file) or not os.path.exists (target_training_file) or not os.path.exists (target_testing_file):
+        print ("Splitting the data")
         X_train, X_test, y_train, y_test = split_data (feature_file=feature_file, target_file=target_file, train_size=0.8)
+        save_data (X_train,feature_training_file)
+        save_data (X_test, feature_testing_file)
+        save_data (y_train, target_training_file)
+        save_data (y_test,target_testing_file)
+    else:
+        print ("Training and Test data already split, moving to training")
+
 
 
 
