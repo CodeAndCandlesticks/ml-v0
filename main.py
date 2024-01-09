@@ -7,6 +7,10 @@ import seaborn as sns
 import argparse
 import os
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix
+import pickle
 
 
 def load_data(file_path):
@@ -110,8 +114,15 @@ def remove_highly_correlated(df, threshold):
 
     return df_dropped
 
-def save_data(data, file_path):
-    data.to_csv(file_path)
+def save_data(dataframe, file_path, boolean):
+    """Saves the given DataFrame to a CSV file.
+
+    Args:
+    dataframe (pd.DataFrame): The DataFrame to be saved.
+    file_path (str): The file path where the DataFrame should be saved.
+    """
+    dataframe.to_csv(file_path, index=boolean)
+    print(f'Data saved to {file_path}')
 
 def remove_non_stationary_columns(df, significance_level=0.05):
     """Removes non-stationary columns from the DataFrame.
@@ -161,6 +172,32 @@ def split_data (feature_file, target_file, train_size):
 
     return X_train, X_test, y_train, y_test
 
+def create_and_train (feature_training_file, target_training_file):
+    X_train = pd.read_csv (feature_training_file, index_col=0, parse_dates=True)
+    y_train = pd.read_csv (target_training_file, index_col=0, parse_dates=True)
+    model = RandomForestClassifier (n_estimators = 3, max_features=3, max_depth=2, random_state=4)
+    model.fit (X_train, y_train['signal'])
+
+    return model
+
+def save_model(model, model_name):
+    """Saves the given machine learning model into the models/ directory.
+
+    Args:
+    model (any sklearn model or similar): The trained machine learning model to be saved.
+    model_name (str): The name for the saved model file.
+    """
+    # Ensure the models/ directory exists
+    if not os.path.exists('models'):
+        os.makedirs('models')
+
+    # Define the path for saving the model
+    model_path = os.path.join('models', f'{model_name}.pkl')
+
+    # Save the model
+    with open(model_path, 'wb') as file:
+        pickle.dump(model, file)
+    print(f'Model saved to {model_path}')
 
 def main():
     parser = argparse.ArgumentParser(description='Process some candle file.')
@@ -171,33 +208,43 @@ def main():
     base_filename = os.path.basename(args.file_path).replace('.csv', '')
     feature_file = os.path.join('data', f'{base_filename}-features.csv')
     target_file = os.path.join('data', f'{base_filename}-target.csv')
-    
+    feature_training_file = os.path.join ('data', f'{base_filename}-features-train.csv')
+    feature_testing_file = os.path.join ('data', f'{base_filename}-features-test.csv')
+    target_training_file = os.path.join ('data', f'{base_filename}-target-train.csv')
+    target_testing_file = os.path.join ('data', f'{base_filename}-target-test.csv')
+    target_predicting_file = os.path.join ('data', f'{base_filename}-target-predict.csv')
+
     # Check if files already exist
     if not os.path.exists(feature_file) or not os.path.exists(target_file):
         print ("Data load and Feature engineering")
         data = load_data(args.file_path)
         y, X = feature_engineering(data)
-        save_data(X, feature_file)
-        save_data(y, target_file)
+        save_data(X, feature_file, False)
+        save_data(y, target_file, False)
     else:
         print("Feature and target files already exist, moving on to split the data")
-
-    feature_training_file = os.path.join ('data', f'{base_filename}-features-train.csv')
-    feature_testing_file = os.path.join ('data', f'{base_filename}-features-test.csv')
-    target_training_file = os.path.join ('data', f'{base_filename}-target-train.csv')
-    target_testing_file = os.path.join ('data', f'{base_filename}-target-test.csv')
     
     if not os.path.exists (feature_training_file) or not os.path.exists(feature_testing_file) or not os.path.exists (target_training_file) or not os.path.exists (target_testing_file):
         print ("Splitting the data")
         X_train, X_test, y_train, y_test = split_data (feature_file=feature_file, target_file=target_file, train_size=0.8)
-        save_data (X_train,feature_training_file)
-        save_data (X_test, feature_testing_file)
-        save_data (y_train, target_training_file)
-        save_data (y_test,target_testing_file)
+        save_data (X_train,feature_training_file, False)
+        save_data (X_test, feature_testing_file, False)
+        save_data (y_train, target_training_file, False)
+        save_data (y_test,target_testing_file, False)
     else:
         print ("Training and Test data already split, moving to training")
 
-
+    if not os.path.exists (target_predicting_file):
+        my_first_model = create_and_train (feature_training_file=feature_training_file, target_training_file=target_training_file)
+        X_test = pd.read_csv (feature_testing_file, index_col=0, parse_dates=True)
+        y_predicted = my_first_model.predict (X_test)
+        y_predicted_df = pd.DataFrame(y_predicted, index=X_test.index)
+        y_predicted_df.columns = ['predicted']
+        print (y_predicted_df.head())
+        save_data (y_predicted_df, target_predicting_file, True)
+        save_model(my_first_model, base_filename) 
+    else:
+        print ("Model trained and prediction made, model available on models folder")
 
 
 if __name__ == "__main__":
