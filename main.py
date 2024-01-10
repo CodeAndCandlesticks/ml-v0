@@ -199,6 +199,19 @@ def save_model(model, model_name):
         pickle.dump(model, file)
     print(f'Model saved to {model_path}')
 
+def evaluation_metrics (predicted_values, expected_values):
+    y_predicted = pd.read_csv(predicted_values, index_col=0, parse_dates=True)['signal']
+
+    y_expected = pd.read_csv(expected_values, index_col=0, parse_dates=True)['signal']
+    # Define the accuracy data
+    accuracy_data = (y_predicted == y_expected)
+
+    # Accuracy percentage
+    accuracy_percentage = round(100 * accuracy_data.sum()/len(accuracy_data), 2)
+    confusion_matrix_data = confusion_matrix(y_expected.values, y_predicted.values)
+    print (confusion_matrix_data)
+    return accuracy_percentage
+
 def main():
     parser = argparse.ArgumentParser(description='Process some candle file.')
     parser.add_argument('file_path', type=str, help='Path to the candles file')
@@ -212,7 +225,7 @@ def main():
     feature_testing_file = os.path.join ('data', f'{base_filename}-features-test.csv')
     target_training_file = os.path.join ('data', f'{base_filename}-target-train.csv')
     target_testing_file = os.path.join ('data', f'{base_filename}-target-test.csv')
-    target_predicting_file = os.path.join ('data', f'{base_filename}-target-predict.csv')
+    target_predicted_file = os.path.join ('data', f'{base_filename}-target-predict.csv')
 
     # Check if files already exist
     if not os.path.exists(feature_file) or not os.path.exists(target_file):
@@ -234,17 +247,20 @@ def main():
     else:
         print ("Training and Test data already split, moving to training")
 
-    if not os.path.exists (target_predicting_file):
+    if not os.path.exists (target_predicted_file):
         my_first_model = create_and_train (feature_training_file=feature_training_file, target_training_file=target_training_file)
         X_test = pd.read_csv (feature_testing_file, index_col=0, parse_dates=True)
         y_predicted = my_first_model.predict (X_test)
         y_predicted_df = pd.DataFrame(y_predicted, index=X_test.index)
-        y_predicted_df.columns = ['predicted']
+        y_predicted_df.columns = ['signal']
         print (y_predicted_df.head())
-        save_data (y_predicted_df, target_predicting_file, True)
+        save_data (y_predicted_df, target_predicted_file, True)
         save_model(my_first_model, base_filename) 
     else:
         print ("Model trained and prediction made, model available on models folder")
+    
+    print (evaluation_metrics (target_predicted_file, target_testing_file))
+    
 
 
 if __name__ == "__main__":
