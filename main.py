@@ -199,7 +199,7 @@ def save_model(model, model_name):
         pickle.dump(model, file)
     print(f'Model saved to {model_path}')
 
-def evaluation_metrics (predicted_values, expected_values):
+def evaluation_metrics (predicted_values, expected_values, base_filename):
     y_predicted = pd.read_csv(predicted_values, index_col=0, parse_dates=True)['signal']
 
     y_expected = pd.read_csv(expected_values, index_col=0, parse_dates=True)['signal']
@@ -208,10 +208,32 @@ def evaluation_metrics (predicted_values, expected_values):
 
     # Accuracy percentage
     accuracy_percentage = round(100 * accuracy_data.sum()/len(accuracy_data), 2)
-    confusion_matrix_data = confusion_matrix(y_expected.values, y_predicted.values)
-    print (confusion_matrix_data)
-    return accuracy_percentage
+    cm = confusion_matrix(y_expected.values, y_predicted.values)
 
+    # Calculate percentages
+    win = cm[1,1]
+    loss = cm[0,1]
+    loss_prevented = cm[0,0]
+    opportunity_loss = cm[1,0]
+    win_rate = round(100 * win / cm[1].sum(), 2)  # True Positives / Total Actual Positives
+    loss_rate = round(100 * loss / cm[0].sum(), 2)  # False Positives / Total Actual Negatives
+
+    plt.figure(figsize=(10,7))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.title('Confusion Matrix')
+    plt.ylabel('Actual Values')
+    plt.xlabel('Predicted Values')
+    #plt.show() # not supported by WSL
+    plt.savefig(f'models/{base_filename}-cm.png')
+    print(f'Wins: {win}')
+    print(f'Losses: {loss}')
+    print(f'Losses Prevented: {loss_prevented}')
+    print(f'Opportunities Lost: {opportunity_loss}')
+    print(f'Win_rate: {win_rate}')
+    print(f'Loss rate: {loss_rate}')
+
+    print (classification_report (y_expected.values, y_predicted.values))
+    
 def main():
     parser = argparse.ArgumentParser(description='Process some candle file.')
     parser.add_argument('file_path', type=str, help='Path to the candles file')
@@ -259,8 +281,8 @@ def main():
     else:
         print ("Model trained and prediction made, model available on models folder")
     
-    print (evaluation_metrics (target_predicted_file, target_testing_file))
-    
+    evaluation_metrics (target_predicted_file, target_testing_file, base_filename)
+
 
 
 if __name__ == "__main__":
