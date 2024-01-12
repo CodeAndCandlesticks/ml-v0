@@ -225,7 +225,7 @@ def save_model(model, model_name):
         pickle.dump(model, file)
     print(f'Model saved to {model_path}')
 
-def evaluation_metrics (predicted_values, expected_values, base_filename):
+def evaluation_metrics (predicted_values, expected_values, base_filename, classification_report_file):
     y_predicted = pd.read_csv(predicted_values, index_col=0, parse_dates=True)['signal']
 
     y_expected = pd.read_csv(expected_values, index_col=0, parse_dates=True)['signal']
@@ -236,29 +236,21 @@ def evaluation_metrics (predicted_values, expected_values, base_filename):
     accuracy_percentage = round(100 * accuracy_data.sum()/len(accuracy_data), 2)
     cm = confusion_matrix(y_expected.values, y_predicted.values)
 
-    # Calculate percentages
-    win = cm[1,1]
-    loss = cm[0,1]
-    loss_prevented = cm[0,0]
-    opportunity_loss = cm[1,0]
-    win_rate = round(100 * win / cm[1].sum(), 2)  # True Positives / Total Actual Positives
-    loss_rate = round(100 * loss / cm[0].sum(), 2)  # False Positives / Total Actual Negatives
-
     plt.figure(figsize=(10,7))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
     plt.title('Confusion Matrix')
     plt.ylabel('Actual Values')
     plt.xlabel('Predicted Values')
     #plt.show() # not supported by WSL
-    plt.savefig(f'models/{base_filename}-cm.png')
-    print(f'Wins: {win}')
-    print(f'Losses: {loss}')
-    print(f'Losses Prevented: {loss_prevented}')
-    print(f'Opportunities Lost: {opportunity_loss}')
-    print(f'Win_rate: {win_rate}')
-    print(f'Loss rate: {loss_rate}')
+    plt.savefig(f'models/{base_filename}-confusion-matrix.png')
 
-    print (classification_report (y_expected.values, y_predicted.values))
+    print (f'Accuracy %:{accuracy_percentage}')
+    print ('An f1-score above 0.5 is usually considered a good number.')
+    report = classification_report (y_expected.values, y_predicted.values)
+    print (report) 
+    with open(classification_report_file, 'w') as file:
+        file.write(report)
+
     
 def main():
     parser = argparse.ArgumentParser(description='Process some candle file.')
@@ -274,6 +266,7 @@ def main():
     target_training_file = os.path.join ('data', f'{base_filename}-target-train.csv')
     target_testing_file = os.path.join ('data', f'{base_filename}-target-test.csv')
     target_predicted_file = os.path.join ('data', f'{base_filename}-target-predict.csv')
+    classification_report_file = os.path.join ('models', f'{base_filename}-classification_report.csv')
 
     # Check if files already exist
     if not os.path.exists(feature_file) or not os.path.exists(target_file):
@@ -305,8 +298,11 @@ def main():
         save_model(my_first_model, base_filename) 
     else:
         print ("Model trained and prediction made, model available on models folder")
+    if not os.path.exists (classification_report_file):
+        evaluation_metrics (target_predicted_file, target_testing_file, base_filename, classification_report_file)
+    else:
+        print ("Metrics have been saved for this model, moving on to backtesting")
     
-    evaluation_metrics (target_predicted_file, target_testing_file, base_filename)
 
 
 
