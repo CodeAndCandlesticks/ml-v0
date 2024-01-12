@@ -14,12 +14,12 @@ import pickle
 
 
 def load_data(file_path):
-    data = pd.read_csv(file_path, index_col=0)
+    data = pd.read_csv(file_path, index_col=0) # consider adding utc=True for timeseries with timezone information
     data.index = pd.to_datetime(data.index)
-    # ... other data preprocessing steps ...
+
     return data
 
-def feature_engineering(data):
+def feature_engineering(data, base_filename):
     """
     Process the input data to extract and engineer features and target.
 
@@ -84,13 +84,32 @@ def feature_engineering(data):
             'pct_change2', 'pct_change5', 'rsi', 'adx', 'sma', 
             'corr', 'volatility', 'volatility2']].copy()
     
-    X = remove_non_stationary_columns(X)
+    i=1
 
-    X = remove_highly_correlated(X, 0.7)
+    # Set number of rows in subplot
+    nrows = int(X.shape[1]+1/2)
+    for feature in X.columns:
+        plt.subplot(nrows, 2, i)
+        
+        # Plot the feature
+        X[feature].plot(figsize=(8,3*X.shape[1]),
+                        color=np.random.rand(3,))
+        plt.ylabel(feature)
+        plt.title(feature)
+        i+=1
+    plt.tight_layout()
+    #plt.show() #not supported in WSL
+    plt.savefig(f'models/{base_filename}-features.png')
+    
+    X = remove_non_stationary_columns(X)
+    
+    X = remove_highly_correlated(X, 0.7, base_filename)
+    
+
 
     return y, X
 
-def remove_highly_correlated(df, threshold):
+def remove_highly_correlated(df, threshold, base_filename):
     """Removes columns with correlation higher than the specified threshold.
     
     Args:
@@ -100,6 +119,11 @@ def remove_highly_correlated(df, threshold):
     Returns:
     DataFrame: The DataFrame with highly correlated columns removed.
     """
+    plt.figure(figsize=(8,5))
+    sns.heatmap(df.corr(), annot=True, cmap='coolwarm')
+    #plt.show() # not supported by WSL
+    plt.savefig(f'models/{base_filename}-correlation_matrix.png')
+
     # Calculate the correlation matrix and get the absolute value
     corr_matrix = df.corr().abs()
 
@@ -114,16 +138,6 @@ def remove_highly_correlated(df, threshold):
 
     return df_dropped
 
-def save_data(dataframe, file_path, boolean):
-    """Saves the given DataFrame to a CSV file.
-
-    Args:
-    dataframe (pd.DataFrame): The DataFrame to be saved.
-    file_path (str): The file path where the DataFrame should be saved.
-    """
-    dataframe.to_csv(file_path, index=boolean)
-    print(f'Data saved to {file_path}')
-
 def remove_non_stationary_columns(df, significance_level=0.05):
     """Removes non-stationary columns from the DataFrame.
 
@@ -134,41 +148,53 @@ def remove_non_stationary_columns(df, significance_level=0.05):
     Returns:
     DataFrame: A DataFrame with non-stationary columns removed.
     """
-    stationary_columns = []
+    non_stationary_columns = []
 
     for col in df.columns:
         result = adfuller(df[col])
-        if result[1] < significance_level:
-            stationary_columns.append(col)
-        else:
+        if result[1] >= significance_level:
+            non_stationary_columns.append(col)
             print(f'{col} is not stationary. Dropping it.')
 
-    return df[stationary_columns]
+    # Drop non-stationary columns
+    df.drop(columns=non_stationary_columns, inplace=True)
+    return df
 
-def split_data (feature_file, target_file, train_size):
+def save_data(dataframe, file_path, boolean=True):
+    """Saves the given DataFrame to a CSV file.
+
+    Args:
+    dataframe (pd.DataFrame): The DataFrame to be saved.
+    file_path (str): The file path where the DataFrame should be saved.
+    """
+    dataframe.to_csv(file_path, index=boolean)
+    print(f'Data saved to {file_path}')
+
+def split_data (feature_file, target_file, train_size, base_filename):
     X = pd.read_csv(feature_file, index_col=0, parse_dates=True)
     y = pd.read_csv(target_file, index_col=0, parse_dates=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=train_size, shuffle=False) # No shuffling because the indices in time series data are timestamps that occur one after the other (in sequence).
     
-    # # Plot the data
-    # plt.figure(figsize=(8, 5))
+    # Plot the data
+    plt.figure(figsize=(8, 5))
 
-    # plt.plot(X_train['pct_change'], linestyle='None',
-    #         marker='.', markersize=3.0, label='X_train data', 
-    #         color='blue')
-    # plt.plot(X_test['pct_change'], linestyle='None',
-    #         marker='.', markersize=3.0, label='X_test data', 
-    #         color='green')
+    plt.plot(X_train['pct_change'], linestyle='None',
+            marker='.', markersize=3.0, label='X_train data', 
+            color='blue')
+    plt.plot(X_test['pct_change'], linestyle='None',
+            marker='.', markersize=3.0, label='X_test data', 
+            color='green')
 
-    # # Set the title and axis label
-    # plt.title("Visualising Train and Test Datasets (pct_change Column)", 
-    #         fontsize=14)
-    # plt.xlabel('Years', fontsize=12)
-    # plt.ylabel('% change (%)', fontsize=12)
+    # Set the title and axis label
+    plt.title("Visualising Train and Test Datasets (pct_change Column)", 
+            fontsize=14)
+    plt.xlabel('Years', fontsize=12)
+    plt.ylabel('% change (%)', fontsize=12)
 
-    # # Display the plot
-    # plt.legend()
-    # plt.show()
+    # Display the plot
+    plt.legend()
+    #plt.show() # not supported in WSL
+    plt.savefig(f'models/{base_filename}-test-and-train-data.png')
 
     return X_train, X_test, y_train, y_test
 
@@ -253,19 +279,19 @@ def main():
     if not os.path.exists(feature_file) or not os.path.exists(target_file):
         print ("Data load and Feature engineering")
         data = load_data(args.file_path)
-        y, X = feature_engineering(data)
-        save_data(X, feature_file, False)
-        save_data(y, target_file, False)
+        y, X = feature_engineering(data, base_filename)
+        save_data(X, feature_file)
+        save_data(y, target_file)
     else:
         print("Feature and target files already exist, moving on to split the data")
     
     if not os.path.exists (feature_training_file) or not os.path.exists(feature_testing_file) or not os.path.exists (target_training_file) or not os.path.exists (target_testing_file):
         print ("Splitting the data")
-        X_train, X_test, y_train, y_test = split_data (feature_file=feature_file, target_file=target_file, train_size=0.8)
-        save_data (X_train,feature_training_file, False)
-        save_data (X_test, feature_testing_file, False)
-        save_data (y_train, target_training_file, False)
-        save_data (y_test,target_testing_file, False)
+        X_train, X_test, y_train, y_test = split_data (feature_file=feature_file, target_file=target_file, train_size=0.8, base_filename=base_filename)
+        save_data (X_train,feature_training_file)
+        save_data (X_test, feature_testing_file)
+        save_data (y_train, target_training_file)
+        save_data (y_test,target_testing_file)
     else:
         print ("Training and Test data already split, moving to training")
 
@@ -275,7 +301,6 @@ def main():
         y_predicted = my_first_model.predict (X_test)
         y_predicted_df = pd.DataFrame(y_predicted, index=X_test.index)
         y_predicted_df.columns = ['signal']
-        print (y_predicted_df.head())
         save_data (y_predicted_df, target_predicted_file, True)
         save_model(my_first_model, base_filename) 
     else:
