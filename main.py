@@ -251,7 +251,170 @@ def evaluation_metrics (predicted_values, expected_values, base_filename, classi
     with open(classification_report_file, 'w') as file:
         file.write(report)
 
+def get_trades(data, close_column, signal_column):
+    """
+    Extracts trade entries and exits based on trading signals and calculates profit and loss.
+    Enhancement: The function assumes that the signal_column contains values indicating the position size (like -1, 0, 1 for short, no position, and long).
+
+    Args:
+    data (pd.DataFrame): DataFrame containing market data.
+    close_column (str): Column name for closing prices.
+    signal_column (str): Column name for trading signals.
+
+    Returns:
+    pd.DataFrame: A DataFrame containing details of each trade.
+    """
+    trades = pd.DataFrame(columns=['Position', 'Entry Time', 'Entry Price', 'Exit Time', 'Exit Price'])
+    current_position = 0
+    entry_time = ''
+
+    for i in data.index:
+        new_position = data.loc[i, signal_column]
+
+        if new_position != current_position:
+            if entry_time:
+                entry_price = data.loc[entry_time, close_column]
+                exit_time = i
+                exit_price = data.loc[exit_time, close_column]
+                trades = trades._append({'Position': current_position, 'Entry Time': entry_time, 
+                                        'Entry Price': entry_price, 'Exit Time': exit_time, 
+                                        'Exit Price': exit_price}, ignore_index=True)
+                entry_time = ''
+
+            if new_position != 0:
+                entry_time = i
+            current_position = new_position
+
+    trades['PnL'] = (trades['Exit Price'] - trades['Entry Price']) * trades['Position']
+    return trades
+
+def get_analytics(trades):
+    """
+    Generates analytics based on a given trade log.
+
+    Args:
+    trades (pd.DataFrame): DataFrame containing trade details.
+
+    Returns:
+    pd.DataFrame: A DataFrame containing various trade analytics.
+    """
+    # Initialize analytics DataFrame
+    analytics = pd.DataFrame(index=['Strategy'])
+
+    # Populate analytics with various metrics
+    analytics['num_of_long'] = (trades['Position'] == 1).sum()
+    analytics['num_of_short'] = (trades['Position'] == -1).sum()
+    analytics['total_trades'] = len(trades)
+    analytics['gross_profit'] = trades[trades['PnL'] > 0]['PnL'].sum()
+    analytics['gross_loss'] = trades[trades['PnL'] < 0]['PnL'].sum()
+    analytics['net_profit'] = trades['PnL'].sum()
+    analytics['winners'] = (trades['PnL'] > 0).sum()
+    analytics['losers'] = (trades['PnL'] <= 0).sum()
+    analytics['win_percentage'] = 100 * analytics['winners'] / analytics['total_trades']
+    analytics['loss_percentage'] = 100 * analytics['losers'] / analytics['total_trades']
+    analytics['per_trade_PnL_winners'] = trades[trades['PnL'] > 0]['PnL'].mean()
+    analytics['per_trade_PnL_losers'] = trades[trades['PnL'] <= 0]['PnL'].mean()
     
+    # Round the analytics for better readability
+    analytics = analytics.round(2)
+
+    # Transpose for better formatting
+    return analytics.T
+
+def calculate_and_save_strategy_metrics(strategy_data, base_filename):
+    """
+    Calculate various strategy metrics, save the plots and analytics.
+
+    Args:
+    strategy_data (pd.DataFrame): DataFrame containing strategy data.
+    base_filename (str): Base name for saving files.
+    """
+    # Calculate cumulative returns
+    strategy_data['cumulative_returns'] = (1 + strategy_data['strategy_returns']).cumprod()
+
+    # Equity Curve Plot
+    plt.figure(figsize=(8, 5))
+    strategy_data['cumulative_returns'].plot(color='green')
+    plt.title('Equity Curve')
+    plt.ylabel('Cumulative returns')
+    plt.tight_layout()
+    plt.savefig(f'models/{base_filename}-cumulative-returns.png')
+
+    # Drawdown Plot
+    plt.figure(figsize=(8, 5))
+    
+    # Calculate the running maximum
+    running_max = np.maximum.accumulate(
+        strategy_data['cumulative_returns'].dropna())
+    # Ensure the value never drops below 1
+    running_max[running_max < 1] = 1
+    # Calculate the percentage drawdown
+    drawdown = ((strategy_data['cumulative_returns'])/running_max - 1) * 100
+    
+    plt.plot(drawdown, color='red')
+    plt.fill_between(drawdown.index, drawdown, color='red')
+    plt.title('Strategy Drawdown')
+    plt.ylabel('Drawdown(%)')
+    plt.xlabel('Year')
+    plt.tight_layout()
+    plt.savefig(f'models/{base_filename}-drawdown.png')
+
+    # Compute metrics
+    metrics = {
+        'cumulative_return': round((strategy_data['cumulative_returns'].iloc[-1] - 1) * 100,2),
+        'annualised_return': round((strategy_data['cumulative_returns'].iloc[-1] ** (252 * 6.5 * 4 / strategy_data.shape[0]) - 1) * 100,2),
+        'annualised_volatility': round(strategy_data['strategy_returns'].std() * np.sqrt(252 * 6.5 * 4) * 100,2),
+        'max_drawdown' : round(drawdown.min(),2),
+        'sharpe_ratio': round(strategy_data['strategy_returns'].mean() / strategy_data['strategy_returns'].std() * np.sqrt(252 * 6.5 * 4),2)
+    }
+
+    # Save metrics to CSV
+    metrics_df = pd.DataFrame.from_dict(metrics, orient='index', columns=['Value'])
+    metrics_df.to_csv(f'models/{base_filename}-analytics.csv', mode='a', header=False)
+    
+    print(f"Analytics and plots saved for {base_filename}")
+
+
+def perform_backtest (candle_file, target_predicted_file, base_filename):
+    
+    # Create filenames
+    trade_log_file = os.path.join ('models', f'{base_filename}-trade-log.csv')
+    analytics_file = os.path.join ('models', f'{base_filename}-analytics.csv')
+
+    # Read the close price
+    strategy_data = pd.DataFrame()
+    strategy_data['close'] = pd.read_csv(candle_file, index_col=0)['close']
+
+    # Read the predicted signals
+    strategy_data['predicted_signal'] = pd.read_csv(target_predicted_file, index_col=0)
+    strategy_data.index = pd.to_datetime(strategy_data.index)
+
+    strategy_data = strategy_data.dropna()
+
+    # Calculate the percentage change
+    strategy_data['pct_change'] = strategy_data['close'].pct_change()
+
+    # Calculate the strategy returns
+    strategy_data['strategy_returns'] = strategy_data['predicted_signal'].shift(1) * \
+        strategy_data['pct_change']
+
+    # Drop the missing values
+    strategy_data.dropna(inplace=True)
+    print (strategy_data.head())
+
+    # Get trade details for hit ratio strategy
+    trade_log = get_trades(strategy_data, 'close', 
+                        'predicted_signal')
+    save_data (trade_log, trade_log_file)
+
+    analytics = get_analytics(trade_log)
+
+    save_data (analytics, analytics_file)
+
+    calculate_and_save_strategy_metrics(strategy_data, base_filename)
+
+
+
 def main():
     parser = argparse.ArgumentParser(description='Process some candle file.')
     parser.add_argument('file_path', type=str, help='Path to the candles file')
@@ -303,7 +466,7 @@ def main():
     else:
         print ("Metrics have been saved for this model, moving on to backtesting")
     
-
+    perform_backtest(args.file_path,target_predicted_file, base_filename)
 
 
 if __name__ == "__main__":
